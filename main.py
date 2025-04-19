@@ -1,36 +1,74 @@
+# main.py
+import os
+from dotenv import load_dotenv
 import pandas as pd
-import streamlit as st
-import time
-from mlb_data import get_home_run_projections  # Your data source
+from mlb_hr_model import load_model, get_today_predictions
+import requests
+
+# Load API keys from .env file
+load_dotenv()
+ODDS_API_KEY = os.getenv("ODDS_API_KEY")  # Set in .env file
+
+# --- Weather Integration (Open-Meteo is free and keyless)
+def get_weather_forecast(latitude, longitude):
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={latitude}&longitude={longitude}"
+        f"&hourly=temperature_2m,wind_speed_10m"
+        f"&current_weather=true"
+    )
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        current_weather = data.get("current_weather", {})
+        return {
+            "temperature": current_weather.get("temperature"),
+            "wind_speed": current_weather.get("windspeed")
+        }
+    return {"temperature": None, "wind_speed": None}
+
+# --- Sportsbook Integration (The Odds API)
+def get_mlb_odds():
+    if not ODDS_API_KEY:
+        print("⚠️ ODDS_API_KEY not found. Skipping odds fetch.")
+        return []
+    url = (
+        f"https://api.the-odds-api.com/v4/sports/baseball_mlb/odds"
+        f"?regions=us&markets=h2h&apiKey={ODDS_API_KEY}"
+    )
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    print(f"Failed to fetch odds: {response.status_code}")
+    return []
+
+def format_output(df):
+    print("\n🔥 Top Home Run Candidates Today 🔥\n")
+    print(f"{'Player':25} {'Team':>6} {'HR Probability':>15}")
+    print("=" * 50)
+    for _, row in df.iterrows():
+        print(f"{row['player_name'][:25]:25} {row['team']:>6} {row['hr_prob']*100:14.2f}%")
+    print()
 
 def main():
-    st.set_page_config(page_title="MLB Home Run Projections", layout="wide")
-    st.title("🔮 MLB Daily Home Run Projections")
-    st.caption("AI-powered predictions using sportsbook odds, stats, and matchup data")
+    print("🔄 Loading AI model...")
+    model = load_model()
 
-    # Auto-refresh options
-    refresh_interval = st.sidebar.number_input("⏱ Auto-refresh interval (seconds)", min_value=30, max_value=3600, value=300, step=30)
-    auto_refresh = st.sidebar.checkbox("🔁 Enable auto-refresh")
+    print("📊 Fetching today's player data...")
+    df = get_today_predictions(model)
 
-    # Store current time
-    if auto_refresh:
-        st.experimental_set_query_params(_=int(time.time()))
-        st.experimental_rerun()
+    if df.empty:
+        print("⚠️ No data available yet for today.")
+        return
 
-    # Load data
-    df = get_home_run_projections()
+    # Optional: add weather data for each game if location info is available
+    # df['temperature'], df['wind_speed'] = ...
 
-    # Display full projections table
-    st.subheader("📊 Full Projection Table")
-    st.dataframe(df, use_container_width=True)
+    # Optional: fetch sportsbook odds (can be joined to df if teams match)
+    odds_data = get_mlb_odds()
 
-    # Top 3 picks
-    st.subheader("🔥 Top 3 Home Run Picks Today")
-    top_picks = df.sort_values(by="AI Rating", ascending=False).head(3)
-    st.table(top_picks[["Player", "Team", "HR Odds", "2025 Stats", "AI Rating"]])
-
-    st.markdown("---")
-    st.caption("Built with 💻 Python and 🧠 AI | Auto-refresh resets on each page load.")
+    top_10 = df.sort_values("hr_prob", ascending=False).head(10)
+    format_output(top_10)
 
 if __name__ == "__main__":
     main()
