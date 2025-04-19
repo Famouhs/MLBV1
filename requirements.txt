@@ -4,3 +4,4 @@ requests
 streamlit
 tabulate
 python-dotenv
+joblib
