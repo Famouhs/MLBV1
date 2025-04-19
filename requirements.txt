@@ -5,3 +5,4 @@ streamlit
 tabulate
 python-dotenv
 joblib
+streamlit-autorefresh
