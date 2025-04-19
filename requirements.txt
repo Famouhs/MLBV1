@@ -3,3 +3,4 @@ beautifulsoup4
 requests
 streamlit
 tabulate
+python-dotenv
